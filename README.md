@@ -1,7 +1,7 @@
 # 🎵 Lyric Player NotDev v6.1 (Stable)
 
 [![GitHub Repository](https://img.shields.io/badge/GitHub-Repository-blue?style=flat-square&logo=github)](https://github.com/Iliay1988/Lyric_Player_NotDev)
-[![Java Version]([https://img.shields.io/badge/Java-21%2B-orange?style=flat-square&logo=openjdk)](https://www.oracle.com/java/technologies/javase/jdk21-archive-downloads.html))
+[![Java Version]([https://img.shields.io/badge/Java-17%2B-orange?style=flat-square&logo=openjdk)](https://www.oracle.com/java/technologies/javase/jdk21-archive-downloads.html))
 
 **Lyric Player NotDev** — это высокоточный движок для синхронизации текста песен в реальном времени. Программа автоматически определяет активный медиа-поток в Windows (Spotify, Яндекс Музыка, браузеры, Telegram и др.) и отображает синхронизированный текст (LRC) в кастомизируемом графическом оверлее поверх всех окон.
 
