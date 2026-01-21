@@ -1,28 +1,27 @@
-# 🎵 Java Lyrics Sync Engine v5.5
+# 🎵 Lyric Player NotDev v5.5
 
-Высокоточный синхронизатор текста песен для Windows, написанный на Java. Программа автоматически определяет играющий трек через системные сессии и отображает синхронизированный текст (LRC) в реальном времени в отдельном графическом оверлее.
+Высокоточный движок для синхронизации текста песен в реальном времени. Программа определяет играющий трек в Windows (Spotify, Яндекс Музыка, браузеры) и отображает синхронизированный текст (LRC) в настраиваемом графическом оверлее.
 
-## ✨ Особенности
+[![GitHub Repository](https://img.shields.io/badge/GitHub-Repository-blue?style=flat-square&logo=github)](https://github.com/Iliay1988/Lyric_Player_NotDev)
 
-* **Turbo Sync Engine**: Использование наносекундного таймера (`System.nanoTime`) и интерполяции для идеально плавного вывода текста, независимого от задержек API плеера.
-* **Smart Search**: Двухуровневый поиск через LRCLIB (прямой запрос + глобальный поиск), что позволяет находить даже редкие треки.
-* **Overlay UI**: Полноценное окно на Swing с поддержкой HTML-рендеринга для длинных строк и черным фоном.
-* **Caching System**: Локальный кэш в памяти предотвращает повторные запросы к API и экономит трафик.
-* **Media Integration**: Поддержка большинства системных плееров (Spotify, Яндекс Музыка, браузеры) через библиотеку `media-player-info`.
+## 🚀 Основные возможности
 
-## 🚀 Как запустить
+* **Turbo Sync Engine**: Использование наносекундной интерполяции (`System.nanoTime`) позволяет тексту плавно обновляться даже при задержках системного таймера плеера.
+* **Smart Search & Fallback**: Если прямой запрос к API не удает результат (404), система автоматически переключается на глобальный поиск по ключевым словам.
+* **Overlay UI**: Полноценное окно на Swing с черным фоном и поддержкой HTML-рендеринга для корректного отображения длинных строк.
+* **Memory Caching**: Система кэширования сохраняет тексты прослушанных песен в оперативной памяти, исключая повторные запросы к API.
+* **Regex Cleaning**: Автоматическая очистка названий треков от "мусора" (например, *[Official Video]*, *(Radio Edit)*) для максимально точного поиска.
 
-### Требования
-* **Java 17** или выше.
-* Windows (для работы системных медиа-сессий).
+## 🛠 Технологический стек
 
-### Зависимости
-Проект использует следующие библиотеки:
-* [Jsoup](https://jsoup.org/) — для сетевых запросов.
-* [JSON-Java](https://github.com/stleary/JSON-java) — для парсинга ответов API.
-* [media-player-info](https://github.com/redstones/media-player-info) — для получения данных о текущем треке из Windows.
+* **Language:** Java 17+
+* **Networking:** [Jsoup](https://jsoup.org/)
+* **JSON Parsing:** [org.json](https://github.com/stleary/JSON-java)
+* **Media Info:** [media-player-info](https://github.com/redstones/media-player-info) (Windows SMTC Integration)
+* **API:** [LRCLIB](https://lrclib.net/)
 
-### Сборка и запуск
+## 📦 Установка и запуск
+
 1. Склонируйте репозиторий:
    ```bash
-   git clone [https://github.com/твой-логин/music-lyric-sync.git](https://github.com/твой-логин/music-lyric-sync.git)
+   git clone [https://github.com/Iliay1988/Lyric_Player_NotDev.git](https://github.com/Iliay1988/Lyric_Player_NotDev.git)
