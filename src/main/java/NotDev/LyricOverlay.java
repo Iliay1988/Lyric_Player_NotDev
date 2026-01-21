@@ -16,7 +16,7 @@ public class LyricOverlay {
     private String nextLine = "";
 
     private float animationProgress = 1.0f;
-    private final float ANIMATION_SPEED = 6f;
+    private final float ANIMATION_SPEED = 10f;
 
     public LyricOverlay() {
         frame = new JFrame("Lyrics Player");
