@@ -14,6 +14,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 
+/**
+ * LyricSynchronizer v6.4
+ * Поддержка многострочной анимации (Prev/Current/Next)
+ * Интеграция с фоновым размытием и прогресс-баром.
+ */
 public class LyricSynchronizer {
 
     private static final TreeMap<Long, String> lyricsMap = new TreeMap<>();
@@ -24,20 +29,22 @@ public class LyricSynchronizer {
     private static volatile long basePlayerPosMs = 0;
     private static volatile long lastSyncNano = 0;
     private static volatile long softOffsetMs = 0;
+    private static volatile long totalDurationSec = 0;
 
     private static volatile boolean isPaused = true;
     private static volatile boolean isLoading = false;
-
     private static long lastDisplayedTimestamp = -1;
     private static volatile boolean isRunning = true;
 
+    // Смещение для идеального попадания в бит (100мс — база для Windows)
     private static final int SYSTEM_LATENCY_BIAS = 100;
 
     public static void main(String[] args) {
+        // Установка UTF-8 для корректного вывода в консоль Windows
         try { System.setOut(new PrintStream(System.out, true, "UTF-8")); } catch (Exception ignored) {}
 
         overlay = new LyricOverlay();
-        System.out.println("=== Lyric Engine v6.1 [Resilient Sync] ===");
+        System.out.println("=== Lyric Engine v6.4 [Smooth Animation] ===");
 
         startUpdateThread();
 
@@ -49,31 +56,53 @@ public class LyricSynchronizer {
         }
     }
 
+    /**
+     * Основной цикл отрисовки и интерполяции времени
+     */
     private static void render() {
         long now = System.nanoTime();
         long elapsedSinceSync = (now - lastSyncNano) / 1_000_000;
 
+        // Плавная коррекция микро-рассинхронов (Soft Sync)
         if (Math.abs(softOffsetMs) > 2) {
-            long adjustment = (long) Math.ceil(softOffsetMs / 10.0);
-            if (adjustment == 0) adjustment = (softOffsetMs > 0) ? 1 : -1;
-            basePlayerPosMs += adjustment;
-            softOffsetMs -= adjustment;
+            long adj = (long) Math.ceil(softOffsetMs / 15.0);
+            if (adj == 0) adj = (softOffsetMs > 0) ? 1 : -1;
+            basePlayerPosMs += adj;
+            softOffsetMs -= adj;
         }
 
         long currentTotalMs = basePlayerPosMs + elapsedSinceSync + SYSTEM_LATENCY_BIAS;
 
+        // Поиск строк для анимации
         synchronized (lyricsMap) {
-            var entry = lyricsMap.floorEntry(currentTotalMs);
-            if (entry != null) {
-                long timestamp = entry.getKey();
-                if (timestamp > lastDisplayedTimestamp) {
-                    overlay.updateText(entry.getValue());
-                    lastDisplayedTimestamp = timestamp;
-                }
+            var currentEntry = lyricsMap.floorEntry(currentTotalMs);
+
+            if (currentEntry != null && currentEntry.getKey() > lastDisplayedTimestamp) {
+                lastDisplayedTimestamp = currentEntry.getKey();
+
+                // ТЕКУЩАЯ строка
+                String current = currentEntry.getValue();
+
+                // ПРЕДЫДУЩАЯ строка (для ухода вверх)
+                var prevEntry = lyricsMap.lowerEntry(currentEntry.getKey());
+                String prev = (prevEntry != null) ? prevEntry.getValue() : "";
+
+                // СЛЕДУЮЩАЯ строка (для подготовки снизу)
+                var nextEntry = lyricsMap.higherEntry(currentEntry.getKey());
+                String next = (nextEntry != null) ? nextEntry.getValue() : "";
+
+                // Отправляем пачку строк в оверлей для запуска анимации
+                overlay.updateLyrics(prev, current, next);
             }
         }
+
+        // Обновление прогресс-бара
+        overlay.updateProgress(currentTotalMs / 1000, totalDurationSec);
     }
 
+    /**
+     * Поток опроса системного плеера (Windows SMTC)
+     */
     private static void startUpdateThread() {
         Thread worker = new Thread(() -> {
             while (isRunning) {
@@ -86,36 +115,42 @@ public class LyricSynchronizer {
                         IMediaSession session = sessions.get(0);
                         if (session != null && session.getMedia() != null) {
 
+                            // Замеряем задержку системного вызова
                             long reqStart = System.nanoTime();
                             long playerMs = session.getMedia().getPosition();
                             long reqEnd = System.nanoTime();
 
-                            long reqDelay = (reqEnd - reqStart) / 1_000_000;
                             if (playerMs < 10000 && playerMs > 0) playerMs *= 1000;
-                            playerMs += (reqDelay / 2);
+                            playerMs += ((reqEnd - reqStart) / 2_000_000); // Компенсация задержки
 
                             long internalMs = basePlayerPosMs + (System.nanoTime() - lastSyncNano) / 1_000_000;
                             long diff = playerMs - internalMs;
 
-                            if (diff < -5000 || diff > 3600000) {
-                                basePlayerPosMs = playerMs;
-                                lastSyncNano = System.nanoTime();
-                                softOffsetMs = 0;
-                            } else if (Math.abs(diff) > 1500) {
-                                System.out.printf("[Jump] Syncing: %d ms.%n", diff);
+                            // Жесткая синхронизация при прыжках (перемотка)
+                            if (Math.abs(diff) > 1500) {
                                 basePlayerPosMs = playerMs;
                                 lastSyncNano = System.nanoTime();
                                 softOffsetMs = 0;
                             } else if (Math.abs(diff) > 40) {
-                                softOffsetMs = diff;
+                                softOffsetMs = diff; // Мягкая подстройка
                             }
 
                             isPaused = (playerMs == basePlayerPosMs && (System.nanoTime() - lastSyncNano)/1_000_000 > 1500);
+                            totalDurationSec = session.getMedia().getDuration();
 
-                            String t = (session.getMedia().getArtist() != null ? session.getMedia().getArtist() : "") + session.getMedia().getTitle();
+                            String artist = session.getMedia().getArtist();
+                            String title = session.getMedia().getTitle();
+                            String t = (artist != null ? artist : "") + title;
+
+                            // Если трек изменился
                             if (!t.equals(currentTrackId)) {
                                 currentTrackId = t;
-                                prepareNewTrack(session.getMedia().getArtist(), session.getMedia().getTitle());
+
+                                // Обновление обложки (PNG) и фона с размытием
+                                byte[] art = session.getMedia().getArtworkPng();
+                                overlay.updateArt(art);
+
+                                prepareNewTrack(artist, title);
                             }
                         }
                     }
@@ -135,8 +170,9 @@ public class LyricSynchronizer {
             lastDisplayedTimestamp = -1;
             softOffsetMs = 0;
         }
-        System.out.println("[Track] " + artist + " - " + title);
-        overlay.updateText("Loading lyrics...");
+        System.out.println("[New Track] " + artist + " - " + title);
+        overlay.updateLyrics("", "Searching lyrics...", "");
+
         new Thread(() -> {
             fetchLyrics(artist, title);
             isLoading = false;
@@ -149,12 +185,11 @@ public class LyricSynchronizer {
         String cacheKey = cleanArtist + cleanTitle;
 
         if (lyricsCache.containsKey(cacheKey)) {
-            System.out.println("[Cache] Loaded from memory.");
             parseLrc(lyricsCache.get(cacheKey));
             return;
         }
 
-        // 1. Попытка прямого GET-запроса
+        // Попытка 1: Прямой поиск
         try {
             String url = "https://lrclib.net/api/get?artist_name=" +
                     URLEncoder.encode(cleanArtist, StandardCharsets.UTF_8) +
@@ -168,45 +203,27 @@ public class LyricSynchronizer {
                     return;
                 }
             }
-        } catch (Exception e) {
-            System.out.println("[Search] Direct lookup failed.");
-        }
+        } catch (Exception ignored) {}
 
-        // 2. Глобальный поиск с механизмом повторов (Retry)
-        int retry = 0;
-        int maxRetries = 2;
-        while (retry <= maxRetries) {
-            try {
-                System.out.println("[Search] Global search attempt " + (retry + 1) + "...");
-                String sUrl = "https://lrclib.net/api/search?q=" +
-                        URLEncoder.encode(cleanArtist + " " + cleanTitle, StandardCharsets.UTF_8);
-
-                var res = Jsoup.connect(sUrl).ignoreContentType(true).timeout(20000).execute();
-
-                if (res.statusCode() == 200) {
-                    JSONArray results = new JSONArray(res.body());
-                    for (int i = 0; i < results.length(); i++) {
-                        JSONObject match = results.getJSONObject(i);
-                        if (!match.isNull("syncedLyrics")) {
-                            System.out.println("[Search] Success! Lyrics found.");
-                            saveAndParse(cacheKey, match.getString("syncedLyrics"));
-                            return;
-                        }
+        // Попытка 2: Глобальный поиск (Search API)
+        try {
+            String sUrl = "https://lrclib.net/api/search?q=" +
+                    URLEncoder.encode(cleanArtist + " " + cleanTitle, StandardCharsets.UTF_8);
+            var res = Jsoup.connect(sUrl).ignoreContentType(true).timeout(15000).execute();
+            if (res.statusCode() == 200) {
+                JSONArray results = new JSONArray(res.body());
+                for (int i = 0; i < results.length(); i++) {
+                    JSONObject match = results.getJSONObject(i);
+                    if (!match.isNull("syncedLyrics")) {
+                        saveAndParse(cacheKey, match.getString("syncedLyrics"));
+                        return;
                     }
-                    break; // Текст не найден в базе вообще
                 }
-            } catch (java.net.SocketTimeoutException e) {
-                retry++;
-                System.out.println("[Warn] Server timed out. Retrying in 2s...");
-                try { Thread.sleep(2000); } catch (Exception ignored) {}
-            } catch (Exception ex) {
-                System.out.println("[Error] Search error: " + ex.getMessage());
-                break;
             }
-        }
+        } catch (Exception ignored) {}
 
-        System.out.println("[Net] No lyrics available.");
-        overlay.updateText("Lyrics not found");
+        System.out.println("[Net] Lyrics not found.");
+        overlay.updateLyrics("", "No lyrics found", "");
     }
 
     private static void saveAndParse(String key, String lrc) {
@@ -231,7 +248,7 @@ public class LyricSynchronizer {
                     lyricsMap.put(ms, text);
                 } catch (Exception ignored) {}
             }
-            System.out.println("[Parser] Parsed " + lyricsMap.size() + " lines.");
+            System.out.println("[Parser] Loaded " + lyricsMap.size() + " lines.");
         }
     }
 }

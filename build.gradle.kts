@@ -6,7 +6,7 @@ plugins {
 }
 
 group = "NotDev"
-version = "5.6"
+version = "v6.1"
 
 repositories {
     mavenCentral()
@@ -44,5 +44,5 @@ tasks.withType<JavaCompile> {
 tasks.shadowJar {
     archiveBaseName.set("LyricPlayer")
     archiveClassifier.set("all")
-    archiveVersion.set("5.6")
+    archiveVersion.set("v6.1")
 }
