@@ -1,27 +1,31 @@
-# 🎵 Lyric Player NotDev v5.5
-
-Высокоточный движок для синхронизации текста песен в реальном времени. Программа определяет играющий трек в Windows (Spotify, Яндекс Музыка, браузеры) и отображает синхронизированный текст (LRC) в настраиваемом графическом оверлее.
+# 🎵 Lyric Player NotDev v6.1 (Stable)
 
 [![GitHub Repository](https://img.shields.io/badge/GitHub-Repository-blue?style=flat-square&logo=github)](https://github.com/Iliay1988/Lyric_Player_NotDev)
+[![Java Version]([https://img.shields.io/badge/Java-17%2B-orange?style=flat-square&logo=openjdk)](https://www.oracle.com/java/technologies/javase/jdk21-archive-downloads.html))
 
-## 🚀 Основные возможности
+**Lyric Player NotDev** — это высокоточный движок для синхронизации текста песен в реальном времени. Программа автоматически определяет активный медиа-поток в Windows (Spotify, Яндекс Музыка, браузеры, Telegram и др.) и отображает синхронизированный текст (LRC) в кастомизируемом графическом оверлее поверх всех окон.
 
-* **Turbo Sync Engine**: Использование наносекундной интерполяции (`System.nanoTime`) позволяет тексту плавно обновляться даже при задержках системного таймера плеера.
-* **Smart Search & Fallback**: Если прямой запрос к API не удает результат (404), система автоматически переключается на глобальный поиск по ключевым словам.
-* **Overlay UI**: Полноценное окно на Swing с черным фоном и поддержкой HTML-рендеринга для корректного отображения длинных строк.
-* **Memory Caching**: Система кэширования сохраняет тексты прослушанных песен в оперативной памяти, исключая повторные запросы к API.
-* **Regex Cleaning**: Автоматическая очистка названий треков от "мусора" (например, *[Official Video]*, *(Radio Edit)*) для максимально точного поиска.
+---
 
-## 🛠 Технологический стек
+## 🚀 Почему NotDev? (Precision Engine)
 
-* **Language:** Java 17+
-* **Networking:** [Jsoup](https://jsoup.org/)
-* **JSON Parsing:** [org.json](https://github.com/stleary/JSON-java)
-* **Media Info:** [media-player-info](https://github.com/redstones/media-player-info) (Windows SMTC Integration)
-* **API:** [LRCLIB](https://lrclib.net/)
+В отличие от большинства браузерных расширений, этот плеер использует **Ultra-Precision Sync** технологию:
+* **Latency Compensation**: Мы учитываем время отклика ОС Windows (SMTC). Программа замеряет задержку каждого запроса и корректирует тайминг, что позволяет достичь идеального "острого" тайминга, который не могут предложить другие решения.
+* **Nano-Interpolation**: Использование `System.nanoTime()` исключает "дрейф" времени. Текст обновляется плавно и остается синхронным даже при длительном прослушивании.
+* **Resilient Global Search**: Умный поиск с системой повторных попыток (**Retry Logic**). Если API перегружено, программа сделает до 3-х попыток с таймаутом до 20 сек.
+* **Anti-Drift Protection**: Алгоритм "Жесткого захвата" исправляет рассинхроны более 1.5 сек мгновенно (например, при перемотке).
+
+---
 
 ## 📦 Установка и запуск
 
+### Способ 1: Для пользователей (Рекомендуется)
+1. Перейдите в раздел **[Releases](https://github.com/Iliay1988/Lyric_Player_NotDev/releases)**.
+2. Скачайте последний релизный архив.
+3. Убедитесь, что файлы `LyricPlayer-6.1-all.jar` и `run.bat` лежат в одной папке.
+4. Запустите программу через `run.bat`.
+
+### Способ 2: Для разработчиков (Сборка)
 1. Склонируйте репозиторий:
    ```bash
    git clone [https://github.com/Iliay1988/Lyric_Player_NotDev.git](https://github.com/Iliay1988/Lyric_Player_NotDev.git)
