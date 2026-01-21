@@ -40,7 +40,7 @@ public class LyricSynchronizer {
 
         while (isRunning) {
             if (!isLoading && !isPaused) render();
-            try { Thread.sleep(10); } catch (InterruptedException e) { break; }
+            try { Thread.sleep(15); } catch (InterruptedException e) { break; }
         }
     }
 
@@ -79,8 +79,6 @@ public class LyricSynchronizer {
                 }
             }
         }
-
-        overlay.updateProgress(currentTotalMs / 1000, totalDurationSec);
     }
 
     private static void startUpdateThread() {
