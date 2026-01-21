@@ -21,14 +21,14 @@ public class LyricOverlay {
     public LyricOverlay() {
         frame = new JFrame("Lyrics Player");
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        frame.setSize(950, 200); // Сделали окно чуть ниже и компактнее
+        frame.setSize(950, 200);
         frame.setLocationRelativeTo(null);
         frame.setAlwaysOnTop(true);
-        frame.setUndecorated(false); // Можно поставить true для окна без рамок
 
         JPanel mainPanel = new JPanel(new BorderLayout(15, 0)) {
             @Override
             protected void paintComponent(Graphics g) {
+                // Рисуем фон только если он есть
                 if (backgroundImage != null) {
                     g.drawImage(backgroundImage, 0, 0, getWidth(), getHeight(), null);
                 } else {
@@ -54,58 +54,50 @@ public class LyricOverlay {
                 g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
 
                 int w = getWidth();
-                int centerY = getHeight() / 2 - 10;
+                int centerY = getHeight() / 2 - 5;
                 int centerX = w / 2;
 
-                // Функция плавности (Smoothstep)
-                float t = animationProgress;
-                float smoothT = t * t * (3 - 2 * t);
+                // Используем Sine интерполяцию для максимальной плавности
+                float smoothT = (float) (1.0 - Math.cos(animationProgress * Math.PI)) / 2f;
 
-                // Настройки компактности
-                int lineGap = 35; // Уменьшенное расстояние между строк
-                int moveDist = 35; // На сколько пикселей сдвигается текст
-
+                int lineGap = 38;
+                int moveDist = 38;
                 int shiftY = (int) ((1.0f - smoothT) * moveDist);
 
-                // 1. Прошедшая строка (уплывает и исчезает)
-                drawLyricLine(g2, prevLine, centerX, centerY - lineGap - shiftY, 17, 0.3f * smoothT);
-
-                // 2. Текущая строка (всплывает, увеличивается, становится яркой)
-                int curSize = (int) (19 + (7 * smoothT)); // Плавный рост шрифта
-                drawLyricLine(g2, currentLine, centerX, centerY - shiftY, curSize, smoothT);
-
-                // 3. Следующая строка (готовится снизу)
-                drawLyricLine(g2, nextLine, centerX, centerY + lineGap - shiftY, 17, 0.4f * smoothT);
+                // Прошедшая строка
+                drawLyricLine(g2, prevLine, centerX, centerY - lineGap - shiftY, 17, 0.4f * smoothT);
+                // Текущая строка
+                int curSize = (int) (20 + (6 * smoothT));
+                drawLyricLine(g2, currentLine, centerX, centerY - shiftY, curSize, Math.max(0.1f, smoothT));
+                // Будущая строка
+                drawLyricLine(g2, nextLine, centerX, centerY + lineGap - shiftY, 17, 0.5f * smoothT);
             }
         };
         lyricsPanel.setOpaque(false);
 
-        // Увеличили частоту таймера для идеальной плавности (100 FPS)
-        animTimer = new Timer(10, e -> {
+        // Таймер анимации
+        animTimer = new Timer(15, e -> {
             if (animationProgress < 1.0f) {
-                animationProgress += 0.04f; // Чуть медленнее для "тягучести"
+                animationProgress += 0.05f;
                 if (animationProgress > 1.0f) animationProgress = 1.0f;
                 lyricsPanel.repaint();
             }
         });
         animTimer.start();
 
-        // Компактный низ
+        // Прогресс бар
         JPanel bottomPanel = new JPanel(new BorderLayout(0, 2));
         bottomPanel.setOpaque(false);
         bottomPanel.setBorder(BorderFactory.createEmptyBorder(0, 30, 10, 30));
-
         progressBar = new JProgressBar(0, 100);
         progressBar.setPreferredSize(new Dimension(0, 4));
         progressBar.setForeground(new Color(30, 215, 96));
         progressBar.setBackground(new Color(255, 255, 255, 30));
         progressBar.setBorderPainted(false);
-
         timeLabel = new JLabel("00:00 / 00:00");
         timeLabel.setFont(new Font("Monospaced", Font.BOLD, 12));
-        timeLabel.setForeground(new Color(200, 200, 200));
+        timeLabel.setForeground(Color.WHITE);
         timeLabel.setHorizontalAlignment(SwingConstants.CENTER);
-
         bottomPanel.add(progressBar, BorderLayout.NORTH);
         bottomPanel.add(timeLabel, BorderLayout.SOUTH);
 
@@ -121,36 +113,35 @@ public class LyricOverlay {
 
     private void drawLyricLine(Graphics2D g2, String text, int x, int y, int fontSize, float alpha) {
         if (text == null || text.isEmpty()) return;
-
-        // Авто-уменьшение шрифта для длинных строк
-        if (text.length() > 45) fontSize -= 4;
-
         g2.setFont(new Font("Segoe UI", Font.BOLD, fontSize));
         FontMetrics fm = g2.getFontMetrics();
         int textX = x - (fm.stringWidth(text) / 2);
-
-        // Рисуем мягкую тень
-        g2.setColor(new Color(0, 0, 0, (int) (alpha * 180)));
+        g2.setColor(new Color(0, 0, 0, (int) (alpha * 160)));
         g2.drawString(text, textX + 1, y + 1);
-
-        // Рисуем основной текст
         g2.setColor(new Color(1f, 1f, 1f, alpha));
         g2.drawString(text, textX, y);
     }
 
+    // ВАЖНО: проверка, изменилась ли строка
     public void updateLyrics(String prev, String curr, String next) {
+        if (this.currentLine.equals(curr)) return; // Если строка та же, не сбрасываем анимацию!
+
         SwingUtilities.invokeLater(() -> {
             this.prevLine = prev;
             this.currentLine = curr;
             this.nextLine = next;
-            this.animationProgress = 0.0f;
+            this.animationProgress = 0.0f; // Начинаем движение
         });
     }
 
     public void updateArt(byte[] artBytes) {
         SwingUtilities.invokeLater(() -> {
-            artLabel.setIcon(AlbumArtHandler.createIcon(artBytes, 130));
-            this.backgroundImage = AlbumArtHandler.createBlurredBackground(artBytes, frame.getWidth(), frame.getHeight());
+            ImageIcon icon = AlbumArtHandler.createIcon(artBytes, 130);
+            artLabel.setIcon(icon);
+            BufferedImage newBg = AlbumArtHandler.createBlurredBackground(artBytes, frame.getWidth(), frame.getHeight());
+            if (newBg != null) {
+                this.backgroundImage = newBg;
+            }
             frame.repaint();
         });
     }
