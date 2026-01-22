@@ -6,54 +6,74 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 import org.jsoup.Jsoup;
 
-import java.io.PrintStream;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.TreeMap;
+import java.util.*;
 
 public class LyricSynchronizer {
 
+    // Сделали поля static, чтобы они были видны во всем классе
     private static final TreeMap<Long, String> lyricsMap = new TreeMap<>();
-    private static final Map<String, String> lyricsCache = new HashMap<>();
-    private static LyricOverlay overlay;
 
+    private static final Map<String, String> lyricsCache = Collections.synchronizedMap(
+            new LinkedHashMap<>(30, 0.75f, true) {
+                protected boolean removeEldestEntry(Map.Entry eldest) {
+                    return size() > 30;
+                }
+            }
+    );
+
+    private static LyricOverlay overlay = new LyricOverlay(); // Инициализация сразу
     private static volatile String currentTrackId = "";
     private static volatile long basePlayerPosMs = 0;
     private static volatile long lastSyncNano = 0;
     private static volatile long softOffsetMs = 0;
-    private static volatile long totalDurationSec = 0;
 
     private static volatile boolean isPaused = true;
     private static volatile boolean isLoading = false;
     private static long lastDisplayedTimestamp = -1;
     private static volatile boolean isRunning = true;
 
-    public static void main(String[] args) {
-        try { System.setOut(new PrintStream(System.out, true, "UTF-8")); } catch (Exception ignored) {}
-        overlay = new LyricOverlay();
-        startUpdateThread();
+    private static final int SYSTEM_LATENCY = 80;
 
+    // Метод main для Gradle
+    public static void main(String[] args) {
+        System.out.println("LyricSynchronizer started...");
+        start();
+
+        // Цикл для работы в консольном режиме
         while (isRunning) {
-            if (!isLoading && !isPaused) render();
+            render();
             try { Thread.sleep(15); } catch (InterruptedException e) { break; }
         }
     }
 
-    private static void render() {
+    public static void start() {
+        isRunning = true;
+        startUpdateThread();
+    }
+
+    public static void stop() {
+        isRunning = false;
+    }
+
+    public static boolean isPaused() {
+        return isPaused;
+    }
+
+    public static void render() {
+        if (isLoading || lyricsMap.isEmpty()) return;
+
         long now = System.nanoTime();
         long elapsedSinceSync = (now - lastSyncNano) / 1_000_000;
 
-        if (Math.abs(softOffsetMs) > 2) {
-            long adj = (long) Math.ceil(softOffsetMs / 20.0);
-            if (adj == 0) adj = (softOffsetMs > 0) ? 1 : -1;
+        if (Math.abs(softOffsetMs) > 1) {
+            long adj = (softOffsetMs > 0) ? 1 : -1;
             basePlayerPosMs += adj;
             softOffsetMs -= adj;
         }
 
-        long currentTotalMs = basePlayerPosMs + elapsedSinceSync + 100; // +100ms Bias
+        long currentTotalMs = basePlayerPosMs + elapsedSinceSync + SYSTEM_LATENCY;
 
         synchronized (lyricsMap) {
             var currentEntry = lyricsMap.floorEntry(currentTotalMs);
@@ -77,34 +97,40 @@ public class LyricSynchronizer {
                 try {
                     MediaPlayerInfo instance = MediaPlayerInfo.Instance;
                     if (instance == null) { Thread.sleep(1000); continue; }
+
                     List<IMediaSession> sessions = instance.getMediaSessions();
                     if (sessions != null && !sessions.isEmpty()) {
                         IMediaSession session = sessions.get(0);
                         if (session != null && session.getMedia() != null) {
-                            long playerMs = session.getMedia().getPosition();
-                            if (playerMs < 10000 && playerMs > 0) playerMs *= 1000;
 
-                            long internalMs = basePlayerPosMs + (System.nanoTime() - lastSyncNano) / 1_000_000;
+                            long playerMs = session.getMedia().getPosition();
+                            long durationMs = session.getMedia().getDuration();
+
+                            if (playerMs < 10000 && playerMs > 0) playerMs *= 1000;
+                            if (durationMs < 10000 && durationMs > 0) durationMs *= 1000;
+
+                            long now = System.nanoTime();
+                            long internalMs = basePlayerPosMs + (now - lastSyncNano) / 1_000_000;
                             long diff = playerMs - internalMs;
 
-                            if (Math.abs(diff) > 1500) {
+                            if (Math.abs(diff) > 1000) {
                                 basePlayerPosMs = playerMs;
-                                lastSyncNano = System.nanoTime();
-                            } else if (Math.abs(diff) > 50) {
+                                lastSyncNano = now;
+                                softOffsetMs = 0;
+                            } else {
                                 softOffsetMs = diff;
                             }
 
-                            isPaused = (playerMs == basePlayerPosMs && (System.nanoTime() - lastSyncNano)/1_000_000 > 1500);
-                            totalDurationSec = session.getMedia().getDuration();
+                            isPaused = (playerMs == basePlayerPosMs && (now - lastSyncNano)/1_000_000 > 1000);
 
                             String artist = session.getMedia().getArtist();
                             String title = session.getMedia().getTitle();
-                            String t = (artist != null ? artist : "") + title;
+                            String trackKey = (artist != null ? artist : "") + title;
 
-                            if (!t.equals(currentTrackId)) {
-                                currentTrackId = t;
+                            if (!trackKey.equals(currentTrackId)) {
+                                currentTrackId = trackKey;
                                 overlay.updateArt(session.getMedia().getArtworkPng());
-                                prepareNewTrack(artist, title);
+                                prepareNewTrack(artist, title, durationMs / 1000);
                             }
                         }
                     }
@@ -116,24 +142,23 @@ public class LyricSynchronizer {
         worker.start();
     }
 
-    private static void prepareNewTrack(String artist, String title) {
+    private static void prepareNewTrack(String artist, String title, long durationSec) {
         isLoading = true;
         synchronized (lyricsMap) {
             lyricsMap.clear();
             lastDisplayedTimestamp = -1;
         }
-        overlay.updateLyrics("", "Поиск...", "");
+        overlay.updateLyrics("", "Поиск текста...", "");
+
         new Thread(() -> {
-            fetchLyrics(artist, title);
+            fetchLyrics(artist, title, durationSec);
             isLoading = false;
         }).start();
     }
 
-    private static void fetchLyrics(String artist, String title) {
-        // Базовая фильтрация рекламы
+    private static void fetchLyrics(String artist, String title, long durationSec) {
         String lowerTitle = title.toLowerCase();
-        if (lowerTitle.contains("реклама") || lowerTitle.contains("advertisement") || title.length() < 3) {
-            System.out.println("[Skip] Looks like an ad or invalid title.");
+        if (lowerTitle.contains("реклама") || lowerTitle.contains("advertisement") || title.length() < 2) {
             overlay.updateLyrics("", "", "");
             return;
         }
@@ -141,60 +166,85 @@ public class LyricSynchronizer {
         String cleanTitle = title.replaceAll("\\(.*\\)", "").replaceAll("\\[.*\\]", "").trim();
         String cacheKey = artist + title;
 
+        // ТЕПЕРЬ ОШИБКИ НЕ БУДЕТ: поле статическое
         if (lyricsCache.containsKey(cacheKey)) {
             parseLrc(lyricsCache.get(cacheKey));
             return;
         }
 
-        // Пытаемся заменить сокращения
         String normArtist = (artist != null) ? artist.toLowerCase().replace("плм", "полматери") : "";
 
-        // Шаг 1: Полный поиск (Артист + Название)
-        System.out.println("[Step 1] Full search...");
-        if (performSearch(normArtist + " " + cleanTitle, cacheKey)) return;
+        if (performSearch(normArtist + " " + cleanTitle, cacheKey, durationSec)) return;
 
-        // Шаг 2: Брутфорс по артистам (если фиты или неточное совпадение)
         if (artist != null) {
             String[] parts = artist.split("[,&/]|feat\\.?|ft\\.?");
-            if (parts.length > 1) { // Запускаем брутфорс только если артистов несколько
-                for (String part : parts) {
-                    String candidate = part.trim().replace("плм", "полматери");
-                    if (candidate.length() < 2) continue;
-
-                    System.out.println("[Step 2] Trying artist: " + candidate);
-                    if (performSearch(candidate + " " + cleanTitle, cacheKey)) return;
-
-                    try { Thread.sleep(300); } catch (InterruptedException ignored) {}
-                }
+            for (String part : parts) {
+                String candidate = part.trim().replace("плм", "полматери");
+                if (candidate.length() < 2) continue;
+                if (performSearch(candidate + " " + cleanTitle, cacheKey, durationSec)) return;
+                try { Thread.sleep(200); } catch (InterruptedException ignored) {}
             }
         }
 
-        // Step 3 УДАЛЕН (Поиск только по названию больше не беспокоит)
-
-        System.out.println("[Net] No lyrics for this track.");
-        overlay.updateLyrics("", "Lyrics not found", "");
+        overlay.updateLyrics("", "Текст не найден", "");
     }
 
-    private static boolean performSearch(String query, String cacheKey) {
+    private static boolean performSearch(String query, String cacheKey, long targetDurationSec) {
         try {
-            System.out.println("  -> Querying: " + query);
             String url = "https://lrclib.net/api/search?q=" + URLEncoder.encode(query, StandardCharsets.UTF_8);
-            var res = Jsoup.connect(url).ignoreContentType(true).timeout(15000).execute();
+            var res = Jsoup.connect(url).ignoreContentType(true).timeout(10000).execute();
+
             if (res.statusCode() == 200) {
                 JSONArray results = new JSONArray(res.body());
-                for (int i = 0; i < Math.min(results.length(), 5); i++) {
+                JSONObject bestMatch = null;
+                double minScore = Double.MAX_VALUE;
+
+                for (int i = 0; i < Math.min(results.length(), 8); i++) {
                     JSONObject match = results.getJSONObject(i);
-                    if (!match.isNull("syncedLyrics") && !match.getString("syncedLyrics").isEmpty()) {
-                        System.out.println("  [!] SUCCESS: Found lyrics for " + match.getString("artistName"));
-                        saveAndParse(cacheKey, match.getString("syncedLyrics"));
-                        return true;
+                    String lrc = match.optString("syncedLyrics", "");
+                    if (lrc.isEmpty()) continue;
+
+                    double score = 0;
+                    if (targetDurationSec > 0 && !match.isNull("duration")) {
+                        score += Math.abs(targetDurationSec - match.getDouble("duration"));
+                    }
+
+                    long lastLineSec = getLastTimestamp(lrc) / 1000;
+                    if (targetDurationSec > 0 && lastLineSec > 0) {
+                        if (lastLineSec > (targetDurationSec + 5)) score += 2000;
+                        score += Math.abs(targetDurationSec - lastLineSec);
+                    }
+
+                    if (score < minScore) {
+                        minScore = score;
+                        bestMatch = match;
+                    }
+                }
+
+                if (bestMatch != null && minScore < 1000) {
+                    saveAndParse(cacheKey, bestMatch.getString("syncedLyrics"));
+                    return true;
+                }
+            }
+        } catch (Exception ignored) {}
+        return false;
+    }
+
+    private static long getLastTimestamp(String lrc) {
+        try {
+            String[] lines = lrc.split("\n");
+            for (int i = lines.length - 1; i >= 0; i--) {
+                String line = lines[i].trim();
+                if (line.startsWith("[") && line.contains("]")) {
+                    int end = line.indexOf("]");
+                    String timeStr = line.substring(1, end);
+                    if (!timeStr.isEmpty() && Character.isDigit(timeStr.charAt(0))) {
+                        return parseTime(timeStr);
                     }
                 }
             }
-        } catch (Exception e) {
-            System.err.println("  [x] Error: " + e.getMessage());
-        }
-        return false;
+        } catch (Exception ignored) {}
+        return -1;
     }
 
     private static void saveAndParse(String key, String lrc) {
@@ -205,19 +255,29 @@ public class LyricSynchronizer {
     private static void parseLrc(String lrc) {
         synchronized (lyricsMap) {
             lyricsMap.clear();
+            long offset = 0;
             for (String line : lrc.split("\n")) {
                 try {
+                    line = line.trim();
                     if (!line.startsWith("[")) continue;
+                    if (line.startsWith("[offset:")) {
+                        offset = Long.parseLong(line.replaceAll("[^-\\d]", ""));
+                        continue;
+                    }
                     int timeEnd = line.indexOf("]");
                     if (timeEnd == -1) continue;
                     String timeStr = line.substring(1, timeEnd);
                     String text = line.substring(timeEnd + 1).trim();
-                    if (text.isEmpty()) text = "...";
-                    String[] parts = timeStr.split(":");
-                    long ms = (Long.parseLong(parts[0]) * 60 * 1000) + (long)(Double.parseDouble(parts[1].replace(",", ".")) * 1000);
-                    lyricsMap.put(ms, text);
+                    if (timeStr.isEmpty() || !Character.isDigit(timeStr.charAt(0))) continue;
+                    long ms = parseTime(timeStr);
+                    lyricsMap.put(ms + offset, text.isEmpty() ? "..." : text);
                 } catch (Exception ignored) {}
             }
         }
+    }
+
+    private static long parseTime(String timeStr) {
+        String[] parts = timeStr.split(":");
+        return (long)(Long.parseLong(parts[0]) * 60 * 1000 + Double.parseDouble(parts[1].replace(",", ".")) * 1000);
     }
 }
