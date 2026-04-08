@@ -19,7 +19,6 @@ public class LyricOverlay {
     private float animationProgress = 1.0f;
     private final float ANIMATION_SPEED = 10f;
 
-    // Переменные для хранения точки нажатия мыши
     private Point initialClick;
 
     public LyricOverlay() {
@@ -31,16 +30,14 @@ public class LyricOverlay {
         frame.setAlwaysOnTop(true);
         frame.setBackground(new Color(0,0,0,0));
 
-        // --- ЛОГИКА ПЕРЕТАСКИВАНИЯ ОКНА ---
         MouseAdapter dragAdapter = new MouseAdapter() {
             @Override
             public void mousePressed(MouseEvent e) {
-                initialClick = e.getPoint(); // Запоминаем, где кликнули внутри окна
+                initialClick = e.getPoint();
             }
 
             @Override
             public void mouseDragged(MouseEvent e) {
-                // Вычисляем новое положение окна на экране
                 int thisX = frame.getLocation().x;
                 int thisY = frame.getLocation().y;
 
@@ -50,7 +47,6 @@ public class LyricOverlay {
                 frame.setLocation(thisX + xMoved, thisY + yMoved);
             }
         };
-        // ----------------------------------
 
         JPanel mainPanel = new JPanel(new BorderLayout(15, 0)) {
             @Override
@@ -66,7 +62,6 @@ public class LyricOverlay {
         };
         mainPanel.setOpaque(false);
 
-        // Вешаем слушатели на главную панель, чтобы можно было тянуть за любое место
         mainPanel.addMouseListener(dragAdapter);
         mainPanel.addMouseMotionListener(dragAdapter);
 
