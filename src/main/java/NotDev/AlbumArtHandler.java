@@ -16,10 +16,9 @@ public class AlbumArtHandler {
             BufferedImage img = ImageIO.read(new ByteArrayInputStream(artBytes));
             if (img == null) return null;
 
-            // Просто масштабируем оригинал
             Image scaled = img.getScaledInstance(size, size, Image.SCALE_SMOOTH);
 
-            img.flush(); // Очистка памяти
+            img.flush(); 
             return new ImageIcon(scaled);
         } catch (Exception e) {
             return null;
