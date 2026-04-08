@@ -12,7 +12,6 @@ import java.util.*;
 
 public class LyricSynchronizer {
 
-    // Сделали поля static, чтобы они были видны во всем классе
     private static final TreeMap<Long, String> lyricsMap = new TreeMap<>();
 
     private static final Map<String, String> lyricsCache = Collections.synchronizedMap(
@@ -23,7 +22,7 @@ public class LyricSynchronizer {
             }
     );
 
-    private static LyricOverlay overlay = new LyricOverlay(); // Инициализация сразу
+    private static LyricOverlay overlay = new LyricOverlay();
     private static volatile String currentTrackId = "";
     private static volatile long basePlayerPosMs = 0;
     private static volatile long lastSyncNano = 0;
@@ -36,12 +35,10 @@ public class LyricSynchronizer {
 
     private static final int SYSTEM_LATENCY = 80;
 
-    // Метод main для Gradle
     public static void main(String[] args) {
         System.out.println("LyricSynchronizer started...");
         start();
 
-        // Цикл для работы в консольном режиме
         while (isRunning) {
             render();
             try { Thread.sleep(15); } catch (InterruptedException e) { break; }
@@ -166,7 +163,6 @@ public class LyricSynchronizer {
         String cleanTitle = title.replaceAll("\\(.*\\)", "").replaceAll("\\[.*\\]", "").trim();
         String cacheKey = artist + title;
 
-        // ТЕПЕРЬ ОШИБКИ НЕ БУДЕТ: поле статическое
         if (lyricsCache.containsKey(cacheKey)) {
             parseLrc(lyricsCache.get(cacheKey));
             return;
